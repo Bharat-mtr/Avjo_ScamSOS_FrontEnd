@@ -72,11 +72,11 @@ def add_user(name, contact, address, category, recording, screenshot):
         st.image(content, caption="Uploaded Image", use_column_width=True)
 
         # Perform text detection
-        st.write("Detecting text...")
+        st.write("Redaing Image...")
         texts = detect_text(content)
         # Display detected text
         if texts:
-            st.write("Detected text:")
+            st.write("Reading completed")
             #st.write(texts[0].description)
             screenshot_content += texts[0].description + " "
         else:
@@ -154,6 +154,7 @@ def trigger_retell_call(user_id, name, contact, address):
     return call.call_id
 
 def generate_and_download_report(user_name, contact, address, call_summary):
+    print("Inside genrating report function")
     st.subheader("Avjo-ScamSOS Report")
     
     # Display report in Streamlit
@@ -244,17 +245,6 @@ def submit_complaint(
         mime="application/pdf"
     )
 
-def handle_after_call():
-    # Handled when call is over
-    if st.button("Analyse call"):
-        call_obj = retell_client.call.retrieve(
-            st.session_state["call_id"]
-        )
-        st.session_state['call_summary'] = call_obj.call_analysis.call_summary
-        generate_report_button = st.button("Generate Report")
-        if generate_report_button:
-            generate_and_download_report(st.session_state['name'], st.session_state['contact'], st.session_state['address'], st.session_state['call_summary'])
-
 
 
 st.title("Avjo-ScamSOS")
@@ -297,16 +287,22 @@ if "user_id" in st.session_state:
     )
 
     if option == "Talk to an Agent":
-        if st.button("Start Call"):
-            call_id = trigger_retell_call(
-                st.session_state["user_id"],
-                st.session_state["name"],
-                st.session_state["contact"],
-                st.session_state["address"],
-            )
-            st.session_state["call_id"] = call_id
-            st.info("Call initiated. Please wait for an agent to connect.")
-            handle_after_call()
+        if "call_started" not in st.session_state:
+            st.session_state.call_started = False
+        if "call_analyzed" not in st.session_state:
+            st.session_state.call_analyzed = False
+
+        if not st.session_state.call_started:
+            if st.button("Start Call"):
+                call_id = trigger_retell_call(
+                    st.session_state["user_id"],
+                    st.session_state["name"],
+                    st.session_state["contact"],
+                    st.session_state["address"],
+                )
+                st.session_state["call_id"] = call_id
+                st.session_state.call_started = True
+                st.info("Call initiated. Please wait for an agent to connect.")
 
     elif option == "File complaint offline":
         with st.form("complaint_form"):
@@ -339,5 +335,46 @@ if "user_id" in st.session_state:
                     "Please fill all required fields: Name, Contact, Address, and Situation."
                 )
 
-# TODO: Implement dashboard to show call report after the call ends
+# if 'call_id' in st.session_state:
+#         analyse_call = st.button("Analyse call")
+#         if analyse_call or 'analyse_call' in st.session_state:
+#             call_obj = retell_client.call.retrieve(
+#                 st.session_state["call_id"]
+#             )
+#             st.session_state['call_summary'] = call_obj.call_analysis.call_summary
+#             st.session_state['analyse_call'] = True
+#             print(st.session_state['call_summary'])
+#             generate_report_button = st.button("Generate Report") 
+#             if generate_report_button: 
+#                 generate_and_download_report(st.session_state['name'], st.session_state['contact'], st.session_state['address'], st.session_state['call_summary'])
+
+
+ 
+if 'call_id' in st.session_state:
+    if st.session_state.call_started and not st.session_state.call_analyzed:
+        st.info("Call in progress. When the call is complete, click 'Analyse Call'.")
+        if st.button("Analyse Call"):
+            call_obj = retell_client.call.retrieve(st.session_state["call_id"])
+            st.session_state['call_summary'] = call_obj.call_analysis.call_summary
+            st.session_state.call_analyzed = True
+            st.success("Call analyzed successfully!")
+
+    if st.session_state.call_analyzed:
+        st.subheader("Call Analysis")
+        st.write(st.session_state['call_summary'])
+        
+        if st.button("Generate Report"):
+            generate_and_download_report(
+                st.session_state['name'],
+                st.session_state['contact'],
+                st.session_state['address'],
+                st.session_state['call_summary']
+            )
+
+    # Add a reset button to start over
+    if st.button("Start Over"):
+        for key in ['call_started', 'call_analyzed', 'call_id', 'call_summary']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.experimental_rerun()
 
