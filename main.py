@@ -2,12 +2,20 @@ import streamlit as st
 import requests
 import json
 from io import BytesIO
-import openai
-from google.cloud import vision
 from dotenv import load_dotenv
 import os
+from retell import Retell
+import openai
+from google.cloud import vision
 
 load_dotenv()
+
+retell_client = Retell(
+    # Find the key in dashboard
+    api_key=os.environ.get("RETELL_API_KEY"),
+)
+
+
 openai.api_key = os.environ.get("OPEN_AI_API_KEY")
 # Load service account key from Streamlit secrets
 service_account_info = json.loads(st.secrets["google"]["service_account_key"])
@@ -130,9 +138,17 @@ def add_user(name, contact, address, category, recording, screenshot):
 
 # Function to trigger Retell API call
 def trigger_retell_call(user_id, name, contact, address):
-    # TODO: Implement the actual Retell API call
-    # This is a placeholder function
-    pass
+    """Trigger Retell Agent to call on user's contact number"""
+    metadata = {
+        "user id": user_id,
+        "user name": name,
+        "contact number": contact,
+        "address": address,
+    }
+    call = retell_client.call.create_phone_call(
+        from_number="+14152302677", to_number=contact, metadata=metadata
+    )
+    return call.call_id
 
 
 # Function to submit complaint
@@ -149,7 +165,7 @@ st.title("Avjo-ScamSOS")
 # User Details Form
 with st.form("user_details"):
     name = st.text_input("Name")
-    contact = st.text_input("Contact Number")
+    contact = st.text_input("Contact Number (with country code)")
     address = st.text_input("Address")
     category = st.selectbox("Category", ["OPA", "OPB", "OPC", "Others"])
 
@@ -185,7 +201,7 @@ if "user_id" in st.session_state:
 
     if option == "Talk to an Agent":
         if st.button("Start Call"):
-            trigger_retell_call(
+            call_id = trigger_retell_call(
                 st.session_state["user_id"],
                 st.session_state["name"],
                 st.session_state["contact"],
