@@ -9,6 +9,7 @@ import openai
 from google.cloud import vision
 from fpdf import FPDF
 import textwrap
+import time
 
 load_dotenv()
 
@@ -16,12 +17,27 @@ retell_client = Retell(
     # Find the key in dashboard
     api_key=os.environ.get("RETELL_API_KEY"),
 )
-
+backend_base_url = os.environ.get("BACKEND_BASE_URL")
 
 openai.api_key = os.environ.get("OPEN_AI_API_KEY")
 # Load service account key from Streamlit secrets
 service_account_info = json.loads(st.secrets["google"]["service_account_key"])
 client = vision.ImageAnnotatorClient.from_service_account_info(service_account_info)
+
+
+def check_call_status(call_id):
+    try:
+        response = requests.get(f"{backend_base_url}/call_status/{call_id}")
+        if response.status_code == 200:
+            data = response.json()
+            print("Call status:", data.get("status", "Unknown"))
+            if data.get("status") == "call_ended":
+                return True
+        else:
+            print(f"Failed to fetch call status. Status code: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Error fetching call status: {e}")
+    return False
 
 
 def detect_text(content):
@@ -60,7 +76,7 @@ def add_user(name, contact, address, category, recording, screenshot):
                     ),  # Pass your OpenAI API key here
                 )
                 st.success("Transcription complete!")
-                #st.write(response["text"])
+                # st.write(response["text"])
             except Exception as e:
                 st.error(f"An error occurred: {e}")
         recording_content += response["text"]
@@ -77,7 +93,7 @@ def add_user(name, contact, address, category, recording, screenshot):
         # Display detected text
         if texts:
             st.write("Detected text:")
-            #st.write(texts[0].description)
+            # st.write(texts[0].description)
             screenshot_content += texts[0].description + " "
         else:
             st.write("No text detected.")
@@ -109,8 +125,8 @@ def add_user(name, contact, address, category, recording, screenshot):
         )
         context = completion.choices[0].message.content
     # Define the URL of the Flask API endpoint
-    url = "http://raw-eloise-bharatavjo-64825601.koyeb.app/user"  # Update with your actual API endpoint URL
-
+    # url = "http://raw-eloise-bharatavjo-64825601.koyeb.app/user"  # Update with your actual API endpoint URL
+    url = f"{backend_base_url}/user"
     # Define the data to be sent as JSON in the request body
     new_user_data = {
         "username": name,
@@ -142,58 +158,65 @@ def add_user(name, contact, address, category, recording, screenshot):
 
 # Function to trigger Retell API call
 def trigger_retell_call(user_id, name, contact, address):
-    '''Trigger Retell Agent to call on user's contact number'''
-    retell_llm_dynamic_variables = {"user id":str(user_id),"user name":name,"contact number":contact,"address":address}
-    #st.write(contact + type(contact))
+    """Trigger Retell Agent to call on user's contact number"""
+    retell_llm_dynamic_variables = {
+        "user id": str(user_id),
+        "user name": name,
+        "contact number": contact,
+        "address": address,
+    }
+    # st.write(contact + type(contact))
     print(retell_llm_dynamic_variables)
     call = retell_client.call.create_phone_call(
-            from_number="+14152302677",
-            to_number=str(contact),
-            retell_llm_dynamic_variables= retell_llm_dynamic_variables
-        )
+        from_number="+14152302677",
+        to_number=str(contact),
+        retell_llm_dynamic_variables=retell_llm_dynamic_variables,
+    )
     return call.call_id
+
 
 def generate_and_download_report(user_name, contact, address, call_summary):
     st.subheader("Avjo-ScamSOS Report")
-    
+
     # Display report in Streamlit
     st.write(f"**User Name:** {user_name}")
     st.write(f"**Contact:** {contact}")
     st.write(f"**Address:** {address}")
     st.write("**Call Summary:**")
     st.text_area("", call_summary, height=150, disabled=True)
-    
+
     # Generate PDF
     pdf = FPDF()
     pdf.add_page()
-    
+
     # Set font
     pdf.set_font("Arial", size=12)
-    
+
     # Add content to PDF
-    pdf.cell(200, 10, txt="Avjo-ScamSOS Report", ln=1, align='C')
+    pdf.cell(200, 10, txt="Avjo-ScamSOS Report", ln=1, align="C")
     pdf.cell(200, 10, txt="", ln=1)  # Empty line
     pdf.cell(200, 10, txt=f"User Name: {user_name}", ln=1)
     pdf.cell(200, 10, txt=f"Contact: {contact}", ln=1)
     pdf.cell(200, 10, txt=f"Address: {address}", ln=1)
     pdf.cell(200, 10, txt="Call Summary:", ln=1)
-    
+
     # Write call summary with word wrap
     pdf.set_font("Arial", size=10)
     wrapped_text = textwrap.wrap(call_summary, width=90)
     for line in wrapped_text:
         pdf.cell(0, 10, txt=line, ln=1)
-    
+
     # Save PDF to BytesIO object
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    
+    pdf_bytes = pdf.output(dest="S").encode("latin-1")
+
     # Create download button
     st.download_button(
         label="Download Report as PDF",
         data=pdf_bytes,
         file_name="Avjo-ScamSOS_Report.pdf",
-        mime="application/pdf"
+        mime="application/pdf",
     )
+
 
 # Function to submit complaint
 def submit_complaint(
@@ -206,9 +229,9 @@ def submit_complaint(
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", size=14)
-    
+
     # Add content to PDF
-    pdf.cell(200, 10, txt="Complaint Report", ln=1, align='C')
+    pdf.cell(200, 10, txt="Complaint Report", ln=1, align="C")
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="", ln=1)  # Empty line
     pdf.cell(200, 10, txt=f"User ID: {user_id}", ln=1)
@@ -219,42 +242,45 @@ def submit_complaint(
     pdf.cell(200, 10, txt=f"AWB Number: {awb_number}", ln=1)
     pdf.cell(200, 10, txt=f"Amount: {amount}", ln=1)
     pdf.cell(200, 10, txt="Situation:", ln=1)
-    
+
     # Write situation with word wrap and line breaks
     pdf.set_font("Arial", size=10)
-    lines = situation.split('\n')
+    lines = situation.split("\n")
     for line in lines:
         wrapped_lines = textwrap.wrap(line, width=90)
         for wrapped_line in wrapped_lines:
             pdf.cell(0, 10, txt=wrapped_line, ln=1)
         if len(wrapped_lines) == 0:
-            pdf.cell(0, 10, txt='', ln=1)  # Empty line for line breaks
-    
+            pdf.cell(0, 10, txt="", ln=1)  # Empty line for line breaks
+
     # Save PDF to BytesIO object
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    
+    pdf_bytes = pdf.output(dest="S").encode("latin-1")
+
     # Display success message
     st.success("Complaint submitted successfully!")
-    
+
     # Offer PDF for download
     st.download_button(
         label="Download Complaint Report",
         data=pdf_bytes,
         file_name="complaint_report.pdf",
-        mime="application/pdf"
+        mime="application/pdf",
     )
+
 
 def handle_after_call():
     # Handled when call is over
     if st.button("Analyse call"):
-        call_obj = retell_client.call.retrieve(
-            st.session_state["call_id"]
-        )
-        st.session_state['call_summary'] = call_obj.call_analysis.call_summary
+        call_obj = retell_client.call.retrieve(st.session_state["call_id"])
+        st.session_state["call_summary"] = call_obj.call_analysis.call_summary
         generate_report_button = st.button("Generate Report")
         if generate_report_button:
-            generate_and_download_report(st.session_state['name'], st.session_state['contact'], st.session_state['address'], st.session_state['call_summary'])
-
+            generate_and_download_report(
+                st.session_state["name"],
+                st.session_state["contact"],
+                st.session_state["address"],
+                st.session_state["call_summary"],
+            )
 
 
 st.title("Avjo-ScamSOS")
@@ -285,6 +311,7 @@ if submit_button:
         st.session_state["name"] = name
         st.session_state["contact"] = contact
         st.session_state["address"] = address
+
     else:
         st.error(
             "Please fill all required fields: Name, Contact Number, Address, and Category."
@@ -306,6 +333,11 @@ if "user_id" in st.session_state:
             )
             st.session_state["call_id"] = call_id
             st.info("Call initiated. Please wait for an agent to connect.")
+            while True:
+                if check_call_status(call_id):
+                    break
+                time.sleep(5)  # Adjust interval as needed
+            st.write("call ended")
             handle_after_call()
 
     elif option == "File complaint offline":
@@ -318,7 +350,7 @@ if "user_id" in st.session_state:
             caller_number = st.text_input("Contact of Frauder")
             awb_number = st.text_input("AWB Number")
             amount = st.number_input("Amount of Money Scammed", min_value=0.0)
-            
+
             submit_complaint_button = st.form_submit_button("Submit Complaint")
 
         if submit_complaint_button:
@@ -340,4 +372,3 @@ if "user_id" in st.session_state:
                 )
 
 # TODO: Implement dashboard to show call report after the call ends
-
