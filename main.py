@@ -31,7 +31,10 @@ def check_call_status(call_id):
         if response.status_code == 200:
             data = response.json()
             print("Call status:", data.get("status", "Unknown"))
-            if data.get("status") == "call_ended":
+            if (
+                data.get("status") == "call_ended"
+                or data.get("status") == "call_analysed"
+            ):
                 return True
         else:
             print(f"Failed to fetch call status. Status code: {response.status_code}")
@@ -50,7 +53,7 @@ def detect_text(content):
 
 
 # Function to call the add user API
-def add_user(name, contact, address, category, recording, screenshot):
+def add_user(name, contact, address, recording, screenshot):
     # TODO: Implement the actual API call
     # This is a placeholder function
     recording_content = ""
@@ -88,11 +91,11 @@ def add_user(name, contact, address, category, recording, screenshot):
         st.image(content, caption="Uploaded Image", use_column_width=True)
 
         # Perform text detection
-        st.write("Detecting text...")
+        st.write("Redaing Image...")
         texts = detect_text(content)
         # Display detected text
         if texts:
-            st.write("Detected text:")
+            st.write("Reading completed")
             # st.write(texts[0].description)
             screenshot_content += texts[0].description + " "
         else:
@@ -176,6 +179,7 @@ def trigger_retell_call(user_id, name, contact, address):
 
 
 def generate_and_download_report(user_name, contact, address, call_summary):
+    print("Inside genrating report function")
     st.subheader("Avjo-ScamSOS Report")
 
     # Display report in Streamlit
@@ -234,14 +238,26 @@ def submit_complaint(
     pdf.cell(200, 10, txt="Complaint Report", ln=1, align="C")
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="", ln=1)  # Empty line
-    pdf.cell(200, 10, txt=f"User ID: {user_id}", ln=1)
+    pdf.cell(200, 10, txt=f"Case ID: {user_id}", ln=1)
     pdf.cell(200, 10, txt=f"Name: {name}", ln=1)
-    pdf.cell(200, 10, txt=f"Contact: {contact}", ln=1)
-    pdf.cell(200, 10, txt=f"Address: {address}", ln=1)
-    pdf.cell(200, 10, txt=f"Caller Number: {caller_number}", ln=1)
-    pdf.cell(200, 10, txt=f"AWB Number: {awb_number}", ln=1)
-    pdf.cell(200, 10, txt=f"Amount: {amount}", ln=1)
-    pdf.cell(200, 10, txt="Situation:", ln=1)
+    pdf.cell(200, 10, txt=f"Contact Number: {contact}", ln=1)
+    pdf.cell(200, 10, txt=f"Current Address: {address}", ln=1)
+    pdf.cell(
+        200,
+        10,
+        txt=f"Scammer's Contact Number (if known): {caller_number or 'Not provided'}",
+        ln=1,
+    )
+    pdf.cell(
+        200,
+        10,
+        txt=f"Parcel Tracking Number (if applicable): {awb_number or 'Not applicable'}",
+        ln=1,
+    )
+    pdf.cell(
+        200, 10, txt=f"Amount Lost (if any): {amount or 'No amount specified'}", ln=1
+    )
+    pdf.cell(200, 10, txt="Incident Description:", ln=1)
 
     # Write situation with word wrap and line breaks
     pdf.set_font("Arial", size=10)
@@ -268,89 +284,172 @@ def submit_complaint(
     )
 
 
-def handle_after_call():
-    # Handled when call is over
-    if st.button("Analyse call"):
-        call_obj = retell_client.call.retrieve(st.session_state["call_id"])
-        st.session_state["call_summary"] = call_obj.call_analysis.call_summary
-        generate_report_button = st.button("Generate Report")
-        if generate_report_button:
-            generate_and_download_report(
-                st.session_state["name"],
-                st.session_state["contact"],
-                st.session_state["address"],
-                st.session_state["call_summary"],
-            )
+# Set page config
+st.set_page_config(page_title="Avjo-ScamSOS", page_icon="🆘", layout="wide")
+
+# Custom CSS
+st.markdown(
+    """
+<style>
+    .main {
+        padding: 2rem;
+    }
+    .stButton>button {
+        width: auto;
+    }
+    .stTextInput>div>div>input, .stSelectbox>div>div>select {
+        background-color: black;
+    }
+    .success-message {
+        padding: 1rem;
+        background-color: #d4edda;
+        color: #155724;
+        border-radius: 0.3rem;
+        margin-bottom: 1rem;
+    }
+    .error-message {
+        padding: 1rem;
+        background-color: #f8d7da;
+        color: #721c24;
+        border-radius: 0.3rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 
-st.title("Avjo-ScamSOS")
+# App title and introduction
+st.title("🆘 Avjo-ScamSOS: Your Protection Against Scams")
+st.markdown(
+    "Welcome to Avjo-ScamSOS, your first line of defense against fraudulent activities. We're here to help you report and combat scams effectively."
+)
+st.markdown("---")
+
+# User Details Form
+st.header("Step 1: Tell Us About Your Situation")
+st.markdown("Please provide your information so we can assist you better.")
 
 # User Details Form
 with st.form("user_details"):
-    name = st.text_input("Name")
-    contact = st.text_input("Contact Number (with country code)")
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Name")
+    with col2:
+        contact = st.text_input(
+            "Contact Number (with country code)", placeholder="e.g., +919305857798"
+        )
     address = st.text_input("Address")
-    category = st.selectbox("Category", ["OPA", "OPB", "OPC", "Others"])
+    col3, col4 = st.columns(2)
+    with col3:
+        recording = st.file_uploader(
+            "Upload Any Relevant Audio Recording (optional)",
+            type=["mp3", "wav"],
+            accept_multiple_files=False,
+        )
 
-    recording = st.file_uploader(
-        "Upload Recording (optional)", type=["mp3", "wav"], accept_multiple_files=False
-    )
-    screenshot = st.file_uploader(
-        "Upload Screenshot (optional)",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=False,
-    )
+    with col4:
+        screenshot = st.file_uploader(
+            "Upload Any Relevant Screenshot (optional)",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=False,
+        )
 
-    submit_button = st.form_submit_button("Submit")
+    submit_button = st.form_submit_button("Register My Information")
 
 if submit_button:
-    if name and contact and address and category:
-        user_id = add_user(name, contact, address, category, recording, screenshot)
-        st.success(f"User registered successfully. User ID: {user_id}")
+    if name and contact and address:
+        user_id = add_user(name, contact, address, recording, screenshot)
+        st.markdown(
+            f'<p class="success-message">User registered successfully.</p>',
+            unsafe_allow_html=True,
+        )
         st.session_state["user_id"] = user_id
         st.session_state["name"] = name
         st.session_state["contact"] = contact
         st.session_state["address"] = address
 
     else:
-        st.error(
-            "Please fill all required fields: Name, Contact Number, Address, and Category."
+        st.markdown(
+            '<p class="error-message">Please fill all required fields: Name, Contact Number, Address.</p>',
+            unsafe_allow_html=True,
         )
 
 # Options after user registration
 if "user_id" in st.session_state:
+    st.markdown("---")
+    st.header("Step 2: Choose Your Next Action")
+
+    st.markdown("How would you like to proceed?")
     option = st.radio(
-        "Choose an option:", ("File complaint offline", "Talk to an Agent")
+        label="Choose an option:",
+        options=("File a Detailed Report", "Speak with a Support Agent"),
     )
 
-    if option == "Talk to an Agent":
-        if st.button("Start Call"):
-            call_id = trigger_retell_call(
-                st.session_state["user_id"],
-                st.session_state["name"],
-                st.session_state["contact"],
-                st.session_state["address"],
+    if option == "Speak with a Support Agent":
+        if "call_started" not in st.session_state:
+            st.session_state.call_started = False
+        if "call_analyzed" not in st.session_state:
+            st.session_state.call_analyzed = False
+
+        if not st.session_state.call_started:
+            st.markdown(
+                "Our support agents are ready to assist you. Click the button below to initiate a call."
             )
-            st.session_state["call_id"] = call_id
-            st.info("Call initiated. Please wait for an agent to connect.")
-            while True:
-                if check_call_status(call_id):
-                    break
-                time.sleep(5)  # Adjust interval as needed
-            st.write("call ended")
-            handle_after_call()
 
-    elif option == "File complaint offline":
+            if st.button("Connect with an Agent 📞"):
+                call_id = trigger_retell_call(
+                    st.session_state["user_id"],
+                    st.session_state["name"],
+                    st.session_state["contact"],
+                    st.session_state["address"],
+                )
+                st.session_state["call_id"] = call_id
+                st.session_state.call_started = True
+                st.info("We're connecting you with an agent. Please stay on the line.")
+
+                st.write("Call Status:")
+                # Display spinner while waiting for call to end
+                with st.spinner("Your call is in progress..."):
+                    status_text = st.empty()
+                    time_elapsed = 0
+                    while True:
+                        if check_call_status(call_id):
+                            break
+                        time.sleep(5)  # Adjust interval as needed
+                        time_elapsed += 5
+                        status_text.text(f"Call in progress ({time_elapsed} seconds)")
+                st.success("Call ended successfully!")
+
+                time.sleep(2)
+
+    elif option == "File a Detailed Report":
+        st.subheader("Incident Report Form")
+        st.markdown("Please provide as much detail as possible about the incident.")
         with st.form("complaint_form"):
-            st.write("Complaint Form")
-            name = st.text_input("Name", value=st.session_state["name"])
-            contact = st.text_input("Contact", value=st.session_state["contact"])
-            address = st.text_input("Address", value=st.session_state["address"])
-            situation = st.text_area("Situation")
-            caller_number = st.text_input("Contact of Frauder")
-            awb_number = st.text_input("AWB Number")
-            amount = st.number_input("Amount of Money Scammed", min_value=0.0)
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("Your Name", value=st.session_state["name"])
+                address = st.text_input(
+                    "Your Address", value=st.session_state["address"]
+                )
+                caller_number = st.text_input("Scammer's Contact Number (if known)")
+            with col2:
+                contact = st.text_input(
+                    "Your Contact", value=st.session_state["contact"]
+                )
+                awb_number = st.text_input("Tracking Number (if applicable)")
+                # Modified amount input
+                amount = st.text_input(
+                    "Amount lost (if any, include currency)",
+                    placeholder="e.g., $1000, ₹50000, £500",
+                )
+                st.caption(
+                    "Leave blank if no money was lost or if you're unsure of the amount."
+                )
 
+            situation = st.text_area("Please describe the incident in detail")
             submit_complaint_button = st.form_submit_button("Submit Complaint")
 
         if submit_complaint_button:
@@ -365,10 +464,57 @@ if "user_id" in st.session_state:
                     awb_number,
                     amount,
                 )
-                st.success("Complaint submitted successfully.")
-            else:
-                st.error(
-                    "Please fill all required fields: Name, Contact, Address, and Situation."
+                st.markdown(
+                    '<p class="success-message">Thank you for submitting your report. We will review it and take appropriate action.</p>',
+                    unsafe_allow_html=True,
                 )
 
-# TODO: Implement dashboard to show call report after the call ends
+            else:
+                st.markdown(
+                    '<p class="error-message">Please ensure all required fields are filled: Name, Contact, Address, and Incident Description.</p>',
+                    unsafe_allow_html=True,
+                )
+
+
+# if 'call_id' in st.session_state:
+#         analyse_call = st.button("Analyse call")
+#         if analyse_call or 'analyse_call' in st.session_state:
+#             call_obj = retell_client.call.retrieve(
+#                 st.session_state["call_id"]
+#             )
+#             st.session_state['call_summary'] = call_obj.call_analysis.call_summary
+#             st.session_state['analyse_call'] = True
+#             print(st.session_state['call_summary'])
+#             generate_report_button = st.button("Generate Report")
+#             if generate_report_button:
+#                 generate_and_download_report(st.session_state['name'], st.session_state['contact'], st.session_state['address'], st.session_state['call_summary'])
+
+
+if "call_id" in st.session_state:
+    if st.session_state.call_started and not st.session_state.call_analyzed:
+        call_obj = retell_client.call.retrieve(st.session_state["call_id"])
+        st.write(call_obj)
+        while call_obj.call_analysis == None:
+            time.sleep(1)
+        st.session_state["call_summary"] = call_obj.call_analysis.call_summary
+        st.session_state.call_analyzed = True
+        st.success("We've analyzed your call to better assist you.")
+
+    if st.session_state.call_analyzed:
+        st.subheader("Call Analysis")
+        st.write(st.session_state["call_summary"])
+
+        if st.button("Generate Detailed Report"):
+            generate_and_download_report(
+                st.session_state["name"],
+                st.session_state["contact"],
+                st.session_state["address"],
+                st.session_state["call_summary"],
+            )
+
+    # Add a reset button to start over
+    if st.button("Start a New Report"):
+        for key in ["call_started", "call_analyzed", "call_id", "call_summary"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.experimental_rerun()
