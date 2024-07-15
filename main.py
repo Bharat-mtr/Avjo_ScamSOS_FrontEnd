@@ -33,7 +33,7 @@ def check_call_status(call_id):
             print("Call status:", data.get("status", "Unknown"))
             if (
                 data.get("status") == "call_ended"
-                or data.get("status") == "call_analysed"
+                or data.get("status") == "call_analyzed"
             ):
                 return True
         else:
@@ -298,7 +298,8 @@ st.markdown(
         width: auto;
     }
     .stTextInput>div>div>input, .stSelectbox>div>div>select {
-        background-color: black;
+        background-color: transparent;
+        color: inherit;
     }
     .success-message {
         padding: 1rem;
