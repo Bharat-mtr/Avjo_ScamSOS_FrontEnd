@@ -494,7 +494,6 @@ if "user_id" in st.session_state:
 if "call_id" in st.session_state:
     if st.session_state.call_started and not st.session_state.call_analyzed:
         call_obj = retell_client.call.retrieve(st.session_state["call_id"])
-        st.write(call_obj)
         while call_obj.call_analysis == None:
             time.sleep(1)
         st.session_state["call_summary"] = call_obj.call_analysis.call_summary
